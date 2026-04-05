@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project-specific ignored folders
+outputs/
+uploads/
+data/
+
+# IDEs and OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+db_output.txt
+db_output_utf8.txt

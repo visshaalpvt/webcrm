@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="College Data Enrichment CRM — Automatically find missing contact numbers, emails, and principal names for colleges.">
+    <title>College Data Enrichment CRM</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>🎓</text></svg>">
+</head>
+<body>
+
+<!-- ═══ Navbar ═══ -->
+<nav class="navbar">
+    <div class="navbar-brand">
+        <div class="navbar-logo">🎓</div>
+        <div>
+            <div class="navbar-title">College Data Enrichment CRM</div>
+            <div class="navbar-subtitle">Automated Contact Discovery</div>
+        </div>
+    </div>
+    <div class="navbar-actions">
+        <button class="theme-toggle" id="themeToggle" title="Toggle theme">🌙</button>
+    </div>
+</nav>
+
+<!-- ═══ Main Content ═══ -->
+<main class="main-container">
+
+    <!-- Upload Section -->
+    <section class="card upload-section" id="uploadSection">
+        <div class="card-header">
+            <div class="card-title"><span class="icon">📁</span> Upload Dataset</div>
+            <span class="text-muted" style="font-size:0.75rem">Supports .xlsx, .xls, .csv (max 50MB)</span>
+        </div>
+
+        <div class="upload-zone" id="uploadZone">
+            <div class="upload-icon">📤</div>
+            <div class="upload-text"><strong>Click to upload</strong> or drag and drop your file</div>
+            <div class="upload-hint">Excel or CSV file with College Name column required</div>
+            <input type="file" class="file-input" id="fileInput" accept=".xlsx,.xls,.csv">
+        </div>
+
+        <div class="file-info" id="fileInfo">
+            <span class="file-icon">📊</span>
+            <div class="file-details">
+                <div class="file-name" id="fileName"></div>
+                <div class="file-meta" id="fileMeta"></div>
+            </div>
+            <button class="file-remove" id="fileRemove" title="Remove file">✕</button>
+        </div>
+
+        <div class="preview-section" id="previewSection">
+            <div class="preview-label">Preview (first 5 rows)</div>
+            <div class="table-wrapper">
+                <table class="data-table" id="previewTable">
+                    <thead id="previewHead"></thead>
+                    <tbody id="previewBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="action-buttons" id="uploadActions" style="display:none">
+            <button class="btn btn-primary btn-lg" id="startBtn">
+                🚀 Start Processing
+            </button>
+            <span class="text-muted" style="font-size:0.8rem;align-self:center" id="rowCount"></span>
+        </div>
+    </section>
+
+    <!-- Processing Section -->
+    <section class="card processing-section" id="processingSection">
+        <div class="card-header">
+            <div class="card-title"><span class="icon">⚙️</span> Processing</div>
+            <div class="action-buttons" style="margin:0">
+                <button class="btn btn-warning btn-sm" id="pauseBtn">⏸ Pause</button>
+                <button class="btn btn-primary btn-sm" id="resumeBtn" style="display:none">▶ Resume</button>
+                <button class="btn btn-danger btn-sm" id="cancelBtn">✕ Cancel</button>
+            </div>
+        </div>
+
+        <div class="progress-container">
+            <div class="progress-header">
+                <span class="progress-title">Progress</span>
+                <span class="progress-percent" id="progressPercent">0%</span>
+            </div>
+            <div class="progress-bar-track">
+                <div class="progress-bar-fill" id="progressBar"></div>
+            </div>
+        </div>
+
+        <div class="progress-stats">
+            <div class="stat-card">
+                <div class="stat-value total" id="statProcessed">0</div>
+                <div class="stat-label">Processed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value active" id="statActive">0</div>
+                <div class="stat-label">Active</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value inactive" id="statInactive">0</div>
+                <div class="stat-label">Inactive</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value not-found" id="statNotFound">0</div>
+                <div class="stat-label">Not Found</div>
+            </div>
+        </div>
+
+        <div class="current-item" id="currentItem" style="display:none">
+            <div class="spinner"></div>
+            <span id="currentCollege">Processing...</span>
+            <span class="eta-info" id="etaInfo"></span>
+        </div>
+
+        <div class="log-console" id="logConsole">
+            <div class="log-line"><span class="log-msg text-muted">Waiting for processing to start...</span></div>
+        </div>
+    </section>
+
+    <!-- Results Section -->
+    <section class="card results-section" id="resultsSection">
+        <div class="card-header">
+            <div class="card-title"><span class="icon">📋</span> Results</div>
+            <button class="btn btn-success" id="downloadBtn">
+                📥 Download Excel
+            </button>
+        </div>
+
+        <div class="results-toolbar">
+            <div class="search-wrapper">
+                <input type="text" class="search-input" id="searchInput" placeholder="Search by college name, district, or state...">
+            </div>
+            <select class="filter-select" id="statusFilter">
+                <option value="all">All Status</option>
+                <option value="Active">✅ Active</option>
+                <option value="Inactive">⚠️ Inactive</option>
+                <option value="Not Found">❌ Not Found</option>
+                <option value="Pending">🔵 Pending</option>
+            </select>
+        </div>
+
+        <div class="table-wrapper">
+            <table class="data-table" id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>College Name</th>
+                        <th>State</th>
+                        <th>District</th>
+                        <th>Website</th>
+                        <th>Contact Number</th>
+                        <th>Mail ID</th>
+                        <th>Principal Name</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody"></tbody>
+            </table>
+        </div>
+
+        <div class="empty-state" id="emptyResults" style="display:none">
+            <div class="icon">📭</div>
+            <h3>No results yet</h3>
+            <p>Results will appear here as colleges are processed.</p>
+        </div>
+    </section>
+
+</main>
+
+<!-- ═══ Footer ═══ -->
+<footer class="footer">
+    <p>College Data Enrichment CRM — Built with Flask &amp; BeautifulSoup4</p>
+    <p id="footerTime"></p>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
