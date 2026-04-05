@@ -1,0 +1,17 @@
+Status: 200
+Date: Sun, 05 Apr 2026 07:31:10 GMT
+Content-Type: text/html; charset=utf-8
+Content-Length: 1
+Connection: keep-alive
+access-control-allow-headers: content-type
+access-control-allow-methods: DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT
+access-control-allow-origin: https://webcrm-fawn.vercel.app
+allow: HEAD, GET, POST, OPTIONS
+Content-Encoding: br
+rndr-id: 0f5750b9-9ca9-4215
+vary: Origin, Accept-Encoding
+x-render-origin-server: gunicorn
+cf-cache-status: DYNAMIC
+Server: cloudflare
+CF-RAY: 9e76da017955a902-MAA
+alt-svc: h3=":443"; ma=86400

@@ -353,7 +353,7 @@ function renderResults(colleges) {
             <td>${esc(c.state)}</td>
             <td>${esc(c.district)}</td>
             <td>${c.found_website || c.original_website ?
-                `<a href="${esc(c.found_website || c.original_website)}" target="_blank" style="color:var(--accent-secondary)">${truncate(c.found_website || c.original_website, 25)}</a>` :
+                `<a href="${formatUrl(c.found_website || c.original_website)}" target="_blank" style="color:var(--accent-secondary)">${truncate(c.found_website || c.original_website, 25)}</a>` :
                 '<span class="text-muted">—</span>'}</td>
             <td>${esc(c.extracted_phone) || '—'}</td>
             <td>${c.extracted_email && c.extracted_email !== 'Not Found' ?
@@ -430,6 +430,12 @@ function formatTime(seconds) {
     if (mins < 60) return `${mins}m ${secs}s`;
     const hrs = Math.floor(mins / 60);
     return `${hrs}h ${mins % 60}m`;
+}
+
+function formatUrl(url) {
+    if (!url) return '#';
+    if (!/^https?:\/\//i.test(url)) return 'http://' + url;
+    return url;
 }
 
 function showAlert(message) {

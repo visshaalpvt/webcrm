@@ -183,7 +183,7 @@ def process_single_college(college, session):
     return "Not Found", "Not Found", "Not Found", "Not Found", search_method, found_website, error_log
 
 
-def processing_worker(job_id, max_concurrent=3):
+def processing_worker(job_id, max_concurrent=15):
     """
     Background worker that processes all colleges in a job.
     Uses ThreadPoolExecutor for concurrent scraping.
@@ -505,7 +505,10 @@ def sse_events(job_id):
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
                     break
 
-            time.sleep(0.5)
+            # Send a keep-alive ping so Vercel doesn't kill the connection
+            yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+
+            time.sleep(1.0)
 
     return Response(
         generate(),

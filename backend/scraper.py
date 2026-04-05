@@ -92,7 +92,7 @@ def check_robots_txt(base_url, session=None):
         return True  # If we can't reach robots.txt, assume OK
 
 
-def fetch_page(url, session=None, timeout=15, retries=2):
+def fetch_page(url, session=None, timeout=8, retries=2):
     """
     Fetch a web page with retries and error handling.
     Returns (html_content, final_url, error_message).
@@ -231,7 +231,7 @@ def discover_contact_pages(base_url, soup=None, session=None):
     return unique_urls[:20]  # Max 20 pages
 
 
-def scrape_college_website(website_url, session=None, delay_range=(2, 4)):
+def scrape_college_website(website_url, session=None, delay_range=(1, 2)):
     """
     Scrape a college website — homepage + discovered contact pages.
     Returns dict with:
@@ -292,7 +292,7 @@ def scrape_college_website(website_url, session=None, delay_range=(2, 4)):
         # Rate limit
         time.sleep(random.uniform(*delay_range))
 
-        page_html, _, page_error = fetch_page(url, session, timeout=10, retries=1)
+        page_html, _, page_error = fetch_page(url, session, timeout=5, retries=1)
 
         if page_error:
             # Don't log 404s for common paths — that's expected
