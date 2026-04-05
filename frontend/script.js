@@ -4,6 +4,7 @@
  */
 
 // ─── State ──────────────────────────────────────────────────────
+const API_BASE = 'https://webcrm-r7lk.onrender.com/api';
 let currentJobId = null;
 let eventSource = null;
 let selectedFile = null;
@@ -129,7 +130,7 @@ async function uploadFile(file) {
     formData.append('file', file);
 
     try {
-        const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+        const resp = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
         const data = await resp.json();
 
         if (!resp.ok) {
@@ -173,7 +174,7 @@ startBtn.addEventListener('click', async () => {
     startBtn.innerHTML = '⏳ Starting...';
 
     try {
-        const resp = await fetch(`/api/start/${currentJobId}`, { method: 'POST' });
+        const resp = await fetch(`${API_BASE}/start/${currentJobId}`, { method: 'POST' });
         const data = await resp.json();
 
         if (!resp.ok) {
@@ -206,7 +207,7 @@ function connectSSE(jobId) {
     logConsole.innerHTML = '';
     addLogLine('INFO', 'Connecting to server...');
 
-    eventSource = new EventSource(`/api/events/${jobId}`);
+    eventSource = new EventSource(`${API_BASE}/events/${jobId}`);
 
     eventSource.onmessage = (e) => {
         try {
@@ -300,18 +301,18 @@ function onProcessingComplete(data) {
 // ─── Pause / Resume / Cancel ────────────────────────────────────
 pauseBtn.addEventListener('click', async () => {
     if (!currentJobId) return;
-    await fetch(`/api/pause/${currentJobId}`, { method: 'POST' });
+    await fetch(`${API_BASE}/pause/${currentJobId}`, { method: 'POST' });
 });
 
 resumeBtn.addEventListener('click', async () => {
     if (!currentJobId) return;
-    await fetch(`/api/resume/${currentJobId}`, { method: 'POST' });
+    await fetch(`${API_BASE}/resume/${currentJobId}`, { method: 'POST' });
 });
 
 cancelBtn.addEventListener('click', async () => {
     if (!currentJobId) return;
     if (!confirm('Cancel processing? Progress will be saved.')) return;
-    await fetch(`/api/cancel/${currentJobId}`, { method: 'POST' });
+    await fetch(`${API_BASE}/cancel/${currentJobId}`, { method: 'POST' });
     if (eventSource) eventSource.close();
     addLogLine('WARNING', 'Processing cancelled');
     currentItem.style.display = 'none';
@@ -329,7 +330,7 @@ async function loadResults() {
     if (search) params.set('search', search);
 
     try {
-        const resp = await fetch(`/api/results/${currentJobId}?${params}`);
+        const resp = await fetch(`${API_BASE}/results/${currentJobId}?${params}`);
         const data = await resp.json();
         renderResults(data.colleges);
     } catch (err) {
@@ -386,7 +387,7 @@ statusFilter.addEventListener('change', loadResults);
 // ─── Download ───────────────────────────────────────────────────
 downloadBtn.addEventListener('click', () => {
     if (!currentJobId) return;
-    window.location.href = `/api/download/${currentJobId}`;
+    window.location.href = `${API_BASE}/download/${currentJobId}`;
 });
 
 // ─── Log Console ────────────────────────────────────────────────

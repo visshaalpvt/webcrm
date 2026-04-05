@@ -16,9 +16,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 from flask import Flask, request, jsonify, send_file, Response, send_from_directory
 from werkzeug.utils import secure_filename
+from flask_cors import CORS
 
 # Add parent dir to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 
 from database import (
     init_db, create_job, update_job_status, update_job_progress,
@@ -46,6 +48,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path='')
+CORS(app)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
