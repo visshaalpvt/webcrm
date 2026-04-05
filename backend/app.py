@@ -26,9 +26,12 @@ from database import (
     init_db, create_job, update_job_status, update_job_progress,
     get_job, insert_colleges_batch, update_college_result,
     get_pending_colleges, get_colleges_by_job, get_college_count_by_status,
-    add_log, get_logs
+    add_log, get_logs, get_logs_since, get_job_summary
 )
-from scraper import scrape_college_website, get_session, normalize_url
+from scraper import (
+    scrape_college_website, normalize_url, 
+    domain_failures, domain_cooldown
+)
 from search_utils import find_college_website
 from extractor import extract_all, classify_status
 
@@ -225,7 +228,6 @@ async def async_worker(job_id, max_concurrent=50):
                         log_msg = f"[{processed}/{total}] {college_name[:40]}... → {status} | Phone: {phone} | Email: {email}"
                         await asyncio.to_thread(add_log, job_id, 'INFO', log_msg)
                         
-                        from scraper import domain_failures, domain_cooldown
                         open_circuits = len([t for t in domain_cooldown.values() if t > time.time()])
                         
                         emit_event(job_id, 'progress', {
