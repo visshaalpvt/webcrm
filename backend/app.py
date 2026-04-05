@@ -415,54 +415,34 @@ def start_processing(job_id):
 
 @app.route('/api/status/<job_id>')
 def get_status(job_id):
-    """Get current job status."""
-    job = get_job(job_id)
+    """Robust status polling endpoint - replaces fragile SSE."""
+    last_log_id = request.args.get('last_log_id', 0, type=int)
+    
+    job = get_job_summary(job_id)
     if not job:
         return jsonify({'error': 'Job not found'}), 404
 
-    counts = get_college_count_by_status(job_id)
+    # Fetch new logs
+    new_logs = get_logs_since(job_id, last_log_id)
+    
+    # Get active job state from memory if available
+    job_state = active_jobs.get(job_id, {})
+    
+    # Find the latest progress event for details like ETA, rate
+    events = job_events.get(job_id, [])
+    latest_progress = next((e['data'] for e in reversed(events) if e['type'] == 'progress'), None)
+
     return jsonify({
-        **job,
-        'status_counts': counts,
+        'job': job,
+        'logs': new_logs,
+        'progress_details': latest_progress,
         'is_active': job_id in active_jobs,
+        'is_paused': job_state.get('paused') and not job_state['paused'].is_set()
     })
 
 
-@app.route('/api/events/<job_id>')
-def sse_events(job_id):
-    """Server-Sent Events stream for real-time updates."""
-    def generate():
-        last_index = 0
-        while True:
-            events = job_events.get(job_id, [])
-            new_events = events[last_index:]
-            for event in new_events:
-                data = json.dumps(event)
-                yield f"data: {data}\n\n"
-            last_index = len(events)
+# Server Sent Events (SSE) has been deprecated in favor of robust status polling.
 
-            # Check if job is done
-            job = get_job(job_id)
-            if job and job['status'] in ('completed', 'failed', 'cancelled'):
-                # Send one final event
-                if new_events and new_events[-1].get('type') in ('complete', 'error'):
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                    break
-
-            # Send a keep-alive ping more frequently to prevent Vercel/Render timeouts
-            yield f"data: {json.dumps({'type': 'ping', 'timestamp': time.time()})}\n\n"
-
-            time.sleep(0.5)
-
-    return Response(
-        generate(),
-        mimetype='text/event-stream',
-        headers={
-            'Cache-Control': 'no-cache',
-            'X-Accel-Buffering': 'no',
-            'Connection': 'keep-alive',
-        }
-    )
 
 
 @app.route('/api/results/<job_id>')

@@ -196,8 +196,8 @@ startBtn.addEventListener('click', async () => {
         resultsSection.classList.add('visible');
         isPaused = false;
 
-        // Connect to SSE
-        connectSSE(currentJobId);
+        // Start Polling (replacing fragile SSE)
+        startPolling(currentJobId);
 
     } catch (err) {
         showAlert('Error: ' + err.message);
@@ -206,64 +206,103 @@ startBtn.addEventListener('click', async () => {
     }
 });
 
-// ─── SSE Connection ─────────────────────────────────────────────
-function connectSSE(jobId) {
-    if (eventSource) eventSource.close();
+// ─── Polling System (Zero Interruption) ─────────────────────────
+let pollingInterval = null;
+let lastLogId = 0;
 
+function startPolling(jobId) {
+    if (pollingInterval) clearInterval(pollingInterval);
+    
     logConsole.innerHTML = '';
-    addLogLine('INFO', 'Connecting to server...');
+    lastLogId = 0;
+    addLogLine('INFO', 'Starting status monitor...');
+    
+    // Immediate first poll
+    syncDashboard(jobId);
+    
+    // Poll every 2 seconds
+    pollingInterval = setInterval(() => syncDashboard(jobId), 2000);
+}
 
-    eventSource = new EventSource(`${API_BASE}/events/${jobId}`);
-    
-    // Auto-reconnect logic
-    let reconnectTimeout;
-    
-    eventSource.onopen = () => {
-        clearTimeout(reconnectTimeout);
+async function syncDashboard(jobId) {
+    try {
+        const resp = await fetch(`${API_BASE}/status/${jobId}?last_log_id=${lastLogId}`);
+        if (!resp.ok) throw new Error('Status fetch failed');
+        
+        const data = await resp.json();
+        const job = data.job;
+
+        // Update Progress UI
+        updateProgressFromPolling(job, data.progress_details);
+        
+        // Update Job Status (Paused/Resumed)
+        updateJobStatus(job.status === 'paused' ? 'paused' : (data.is_active ? 'processing' : job.status));
+
+        // Add new logs
+        if (data.logs && data.logs.length > 0) {
+            data.logs.forEach(log => {
+                addLogLine(log.level, log.message);
+                lastLogId = Math.max(lastLogId, log.id);
+            });
+        }
+
+        // Connection Health UI
+        connectionHealth.style.display = 'block';
         connStatusText.textContent = "Connection Healthy";
         connStatusLed.style.background = "#22c55e";
         connStatusLed.style.boxShadow = "0 0 5px #22c55e";
-    };
 
-    eventSource.onmessage = (e) => {
-        try {
-            const event = JSON.parse(e.data);
-            handleSSEEvent(event);
-        } catch (err) {
-            console.error('SSE parse error:', err);
+        // Check for completion
+        if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+            clearInterval(pollingInterval);
+            onProcessingComplete({
+                message: job.error_message || `Job ${job.status}`,
+                processed: job.processed_rows,
+                active: job.active_count,
+                inactive: job.inactive_count,
+                not_found: job.not_found_count,
+                elapsed: 0 // We could calculate this from timestamps if needed
+            });
         }
-    };
 
-    eventSource.onerror = () => {
+    } catch (err) {
+        console.warn('Polling error (retrying):', err);
         connStatusText.textContent = "Reconnecting...";
         connStatusLed.style.background = "#eab308";
         connStatusLed.style.boxShadow = "0 0 5px #eab308";
-        
-        // Don't close, EventSource auto-reconnects by default. 
-        // We just log it if it persists.
-    };
+    }
 }
 
-function handleSSEEvent(event) {
-    switch (event.type) {
-        case 'progress':
-            updateProgress(event.data);
-            break;
-        case 'log':
-            addLogLine(event.data.level, event.data.message);
-            break;
-        case 'status':
-            updateJobStatus(event.data.status);
-            break;
-        case 'complete':
-            onProcessingComplete(event.data);
-            break;
-        case 'error':
-            addLogLine('ERROR', event.data.message);
-            break;
-        case 'done':
-            if (eventSource) eventSource.close();
-            break;
+function updateProgressFromPolling(job, details) {
+    const processed = job.processed_rows || 0;
+    const total = job.total_rows || 0;
+    const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+    
+    progressBar.style.width = pct + '%';
+    progressPercent.textContent = pct + '%';
+    statProcessed.textContent = processed;
+    statActive.textContent = job.active_count || 0;
+    statInactive.textContent = job.inactive_count || 0;
+    statNotFound.textContent = job.not_found_count || 0;
+
+    if (details) {
+        statSpeed.textContent = (details.rate || 0) + '/min';
+        statOpenCircuits.textContent = details.connection_stats?.open_circuits || 0;
+        statRetryCount.textContent = details.connection_stats?.failed_domains || 0;
+        
+        if (details.current) {
+            currentItem.style.display = 'flex';
+            currentCollege.textContent = `Processing: ${details.current}`;
+        }
+        
+        if (details.eta_seconds > 0) {
+            etaInfo.textContent = `ETA: ${formatTime(details.eta_seconds)} • ${details.rate}/min`;
+        }
+    }
+
+    // Refresh results every 10 processed
+    if (processed % 10 === 0 && processed > 0) {
+        loadResults();
     }
 }
 

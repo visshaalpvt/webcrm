@@ -243,6 +243,26 @@ def get_logs(job_id, limit=100):
     conn.close()
     return [dict(l) for l in logs]
 
+def get_logs_since(job_id, last_id):
+    """Get logs for a job with id greater than last_id."""
+    conn = get_db_connection()
+    logs = conn.execute(
+        "SELECT * FROM logs WHERE job_id=? AND id > ? ORDER BY id ASC",
+        (job_id, last_id)
+    ).fetchall()
+    conn.close()
+    return [dict(l) for l in logs]
+
+def get_job_summary(job_id):
+    """Get summarized job stats and status in one query."""
+    conn = get_db_connection()
+    job = conn.execute(
+        "SELECT id, status, total_rows, processed_rows, active_count, inactive_count, not_found_count, error_message FROM jobs WHERE id=?",
+        (job_id,)
+    ).fetchone()
+    conn.close()
+    return dict(job) if job else None
+
 
 # Initialize on import
 init_db()
