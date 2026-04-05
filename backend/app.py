@@ -106,11 +106,10 @@ def validate_columns(df):
 
 # ─── Processing Engine ───────────────────────────────────────────
 
-def process_single_college(college, session):
-    """
-    Process a single college — scrape website or search, extract data.
-    Returns (phone, email, principal, status, search_method, found_website, error_log).
-    """
+import asyncio
+import aiohttp
+
+async def process_single_college(college, session):
     college_name = college.get('college_name', '')
     state = college.get('state', '')
     district = college.get('district', '')
@@ -119,18 +118,15 @@ def process_single_college(college, session):
     found_website = None
     errors = []
 
-    # Already has data? Skip processing
     existing_phone = college.get('extracted_phone', '')
     existing_email = college.get('extracted_email', '')
     if existing_phone and existing_email and existing_phone != 'Not Found' and existing_email != 'Not Found':
         return existing_phone, existing_email, college.get('extracted_principal', 'Not Found'), 'Active', 'skipped', website, None
 
-    # Step 1: Determine website to scrape
     target_url = normalize_url(website) if website else None
 
     if not target_url:
-        # Fallback: search for website
-        found_url, method = find_college_website(college_name, state, district)
+        found_url, method = await asyncio.to_thread(find_college_website, college_name, state, district)
         if found_url:
             target_url = found_url
             found_website = found_url
@@ -138,206 +134,147 @@ def process_single_college(college, session):
         else:
             return "Not Found", "Not Found", "Not Found", "Not Found", "none", None, "No website found via search"
 
-    # Step 2: Scrape the website
-    scrape_result = scrape_college_website(target_url, session)
+    scrape_result = await scrape_college_website(target_url, session)
 
     if scrape_result['errors']:
         errors.extend(scrape_result['errors'])
 
-    # Step 3: Extract data from scraped text
     if scrape_result['texts']:
-        extracted = extract_all(scrape_result['texts'])
-        phone = extracted['phone']
-        email = extracted['email']
-        principal = extracted['principal']
-        website_reachable = scrape_result['website_reachable']
-        status = classify_status(phone, email, website_reachable)
+        extracted = await asyncio.to_thread(extract_all, scrape_result['texts'])
+        phone, email, principal = extracted['phone'], extracted['email'], extracted['principal']
+        status = classify_status(phone, email, scrape_result['website_reachable'])
 
         if not found_website:
-            found_website = scrape_result.get('final_url', target_url)
+            found_website = scrape_result.get('final_url') or target_url
 
         error_log = "; ".join(errors) if errors else None
         return phone, email, principal, status, search_method, found_website, error_log
 
-    # Step 4: If direct scrape failed and we haven't searched yet, try search
     if search_method == 'direct' and website:
-        found_url, method = find_college_website(college_name, state, district)
+        found_url, method = await asyncio.to_thread(find_college_website, college_name, state, district)
         if found_url and found_url != target_url:
             search_method = method
             found_website = found_url
-            scrape_result2 = scrape_college_website(found_url, session)
+            scrape_result2 = await scrape_college_website(found_url, session)
 
             if scrape_result2['texts']:
-                extracted = extract_all(scrape_result2['texts'])
-                phone = extracted['phone']
-                email = extracted['email']
-                principal = extracted['principal']
+                extracted = await asyncio.to_thread(extract_all, scrape_result2['texts'])
+                phone, email, principal = extracted['phone'], extracted['email'], extracted['principal']
                 status = classify_status(phone, email, scrape_result2['website_reachable'])
                 error_log = "; ".join(errors + scrape_result2['errors']) if (errors or scrape_result2['errors']) else None
                 return phone, email, principal, status, search_method, found_website, error_log
 
-    # Nothing found
     error_log = "; ".join(errors) if errors else "No data could be extracted"
     if scrape_result['website_reachable']:
         return "Not Found", "Not Found", "Not Found", "Inactive", search_method, found_website, error_log
     return "Not Found", "Not Found", "Not Found", "Not Found", search_method, found_website, error_log
 
 
-def processing_worker(job_id, max_concurrent=15):
-    """
-    Background worker that processes all colleges in a job.
-    Uses ThreadPoolExecutor for concurrent scraping.
-    """
+async def async_worker(job_id, max_concurrent=50):
     try:
-        update_job_status(job_id, 'processing')
-        add_log(job_id, 'INFO', 'Processing started')
+        await asyncio.to_thread(update_job_status, job_id, 'processing')
+        await asyncio.to_thread(add_log, job_id, 'INFO', 'Processing started')
         emit_event(job_id, 'status', {'status': 'processing'})
 
-        processed = 0
-        active = 0
-        inactive = 0
-        not_found = 0
-        start_time = time.time()
-
-        # Get all pending colleges
-        colleges = get_pending_colleges(job_id)
+        colleges = await asyncio.to_thread(get_pending_colleges, job_id)
         total = len(colleges)
-
         if total == 0:
-            update_job_status(job_id, 'completed')
+            await asyncio.to_thread(update_job_status, job_id, 'completed')
             emit_event(job_id, 'complete', {'message': 'No colleges to process'})
             return
 
-        add_log(job_id, 'INFO', f'Found {total} colleges to process')
         emit_event(job_id, 'log', {'level': 'INFO', 'message': f'Found {total} colleges to process'})
 
-        # Process in batches with ThreadPoolExecutor
-        session = get_session()
+        processed, active, inactive, not_found = 0, 0, 0, 0
+        start_time = time.time()
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        # Connection pooling optimizations for ultra-speed
+        connector = aiohttp.TCPConnector(limit=500, ssl=False, ttl_dns_cache=300)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            
+            async def bound_process(college):
+                nonlocal processed, active, inactive, not_found
+                async with semaphore:
+                    # Check pause/cancel state
+                    job_state = active_jobs.get(job_id, {})
+                    if job_state.get('cancelled', False):
+                        raise asyncio.CancelledError()
+                        
+                    pause_event = job_state.get('paused')
+                    if pause_event and not pause_event.is_set():
+                        emit_event(job_id, 'status', {'status': 'paused'})
+                        await asyncio.to_thread(pause_event.wait)
+                        emit_event(job_id, 'status', {'status': 'processing'})
 
-        with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-            # Submit all colleges
-            future_to_college = {}
-            for college in colleges:
-                # Check if paused or cancelled
-                job_state = active_jobs.get(job_id, {})
-                if job_state.get('cancelled', False):
-                    add_log(job_id, 'INFO', 'Processing cancelled by user')
-                    update_job_status(job_id, 'cancelled')
-                    emit_event(job_id, 'status', {'status': 'cancelled'})
-                    return
+                    college_name = college.get('college_name', 'Unknown')
+                    try:
+                        phone, email, principal, status, method, found_website, error_log = await process_single_college(college, session)
+                        
+                        await asyncio.to_thread(update_college_result, college['id'], phone, email, principal, status, method, found_website, error_log)
+                        
+                        processed += 1
+                        if status == 'Active': active += 1
+                        elif status == 'Inactive': inactive += 1
+                        else: not_found += 1
 
-                # Wait if paused
-                pause_event = job_state.get('paused')
-                if pause_event and not pause_event.is_set():
-                    add_log(job_id, 'INFO', 'Processing paused')
-                    emit_event(job_id, 'status', {'status': 'paused'})
-                    pause_event.wait()  # Block until resumed
-                    add_log(job_id, 'INFO', 'Processing resumed')
-                    emit_event(job_id, 'status', {'status': 'processing'})
+                        elapsed = time.time() - start_time
+                        rate = processed / elapsed if elapsed > 0 else 0
+                        eta = (total - processed) / rate if rate > 0 else 0
 
-                future = executor.submit(process_single_college, college, get_session())
-                future_to_college[future] = college
+                        log_msg = f"[{processed}/{total}] {college_name[:40]}... → {status} | Phone: {phone} | Email: {email}"
+                        await asyncio.to_thread(add_log, job_id, 'INFO', log_msg)
+                        
+                        emit_event(job_id, 'progress', {
+                            'processed': processed, 'total': total, 'active': active,
+                            'inactive': inactive, 'not_found': not_found, 'current': college_name,
+                            'status': status, 'phone': phone, 'email': email, 'principal': principal,
+                            'eta_seconds': int(eta), 'rate': round(rate * 60, 1),
+                        })
+                        emit_event(job_id, 'log', {'level': 'INFO', 'message': log_msg})
 
-            for future in as_completed(future_to_college):
-                college = future_to_college[future]
-                college_name = college.get('college_name', 'Unknown')
-
-                try:
-                    phone, email, principal, status, search_method, found_website, error_log = future.result(timeout=120)
-
-                    # Update database
-                    update_college_result(
-                        college['id'], phone, email, principal,
-                        status, search_method, found_website, error_log
-                    )
-
-                    # Update counters
-                    processed += 1
-                    if status == 'Active':
-                        active += 1
-                    elif status == 'Inactive':
-                        inactive += 1
-                    else:
+                        if processed % 10 == 0:
+                            await asyncio.to_thread(update_job_progress, job_id, processed, active, inactive, not_found)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        processed += 1
                         not_found += 1
+                        await asyncio.to_thread(add_log, job_id, 'ERROR', f"Error on {college_name}: {str(e)[:200]}")
+                        await asyncio.to_thread(update_college_result, college['id'], "Not Found", "Not Found", "Not Found", "Not Found", "error", None, str(e)[:500])
 
-                    # Log progress
-                    elapsed = time.time() - start_time
-                    rate = processed / elapsed if elapsed > 0 else 0
-                    eta = (total - processed) / rate if rate > 0 else 0
+            tasks = [asyncio.create_task(bound_process(c)) for c in colleges]
+            try:
+                await asyncio.gather(*tasks)
+            except asyncio.CancelledError:
+                await asyncio.to_thread(add_log, job_id, 'INFO', 'Processing cancelled by user')
+                await asyncio.to_thread(update_job_status, job_id, 'cancelled')
+                await asyncio.to_thread(update_job_progress, job_id, processed, active, inactive, not_found)
+                emit_event(job_id, 'status', {'status': 'cancelled'})
+                return
 
-                    log_msg = f"[{processed}/{total}] {college_name} → {status} | Phone: {phone} | Email: {email}"
-                    add_log(job_id, 'INFO', log_msg)
-
-                    emit_event(job_id, 'progress', {
-                        'processed': processed,
-                        'total': total,
-                        'active': active,
-                        'inactive': inactive,
-                        'not_found': not_found,
-                        'current': college_name,
-                        'status': status,
-                        'phone': phone,
-                        'email': email,
-                        'principal': principal,
-                        'eta_seconds': int(eta),
-                        'rate': round(rate * 60, 1),  # per minute
-                    })
-                    emit_event(job_id, 'log', {'level': 'INFO', 'message': log_msg})
-
-                    # Checkpoint every 10 colleges
-                    if processed % 10 == 0:
-                        update_job_progress(job_id, processed, active, inactive, not_found)
-
-                except Exception as e:
-                    processed += 1
-                    not_found += 1
-                    error_msg = f"Error processing {college_name}: {str(e)[:200]}"
-                    add_log(job_id, 'ERROR', error_msg)
-                    emit_event(job_id, 'log', {'level': 'ERROR', 'message': error_msg})
-
-                    update_college_result(
-                        college['id'], "Not Found", "Not Found", "Not Found",
-                        "Not Found", "error", None, str(e)[:500]
-                    )
-
-                # Check cancelled after each result
-                job_state = active_jobs.get(job_id, {})
-                if job_state.get('cancelled', False):
-                    # Cancel remaining futures
-                    for f in future_to_college:
-                        f.cancel()
-                    add_log(job_id, 'INFO', 'Processing cancelled by user')
-                    update_job_status(job_id, 'cancelled')
-                    update_job_progress(job_id, processed, active, inactive, not_found)
-                    emit_event(job_id, 'status', {'status': 'cancelled'})
-                    return
-
-        # Final update
-        update_job_progress(job_id, processed, active, inactive, not_found)
-        update_job_status(job_id, 'completed')
-
+        await asyncio.to_thread(update_job_progress, job_id, processed, active, inactive, not_found)
+        await asyncio.to_thread(update_job_status, job_id, 'completed')
         elapsed = time.time() - start_time
         complete_msg = f"Completed! {processed} colleges processed in {elapsed:.0f}s. Active: {active}, Inactive: {inactive}, Not Found: {not_found}"
-        add_log(job_id, 'INFO', complete_msg)
+        await asyncio.to_thread(add_log, job_id, 'INFO', complete_msg)
         emit_event(job_id, 'complete', {
-            'message': complete_msg,
-            'processed': processed,
-            'active': active,
-            'inactive': inactive,
-            'not_found': not_found,
-            'elapsed': int(elapsed),
+            'message': complete_msg, 'processed': processed, 'active': active,
+            'inactive': inactive, 'not_found': not_found, 'elapsed': int(elapsed),
         })
 
     except Exception as e:
         error_msg = f"Fatal error: {str(e)}"
         add_log(job_id, 'ERROR', error_msg)
-        add_log(job_id, 'ERROR', traceback.format_exc())
         update_job_status(job_id, 'failed', error_msg)
         emit_event(job_id, 'error', {'message': error_msg})
-
     finally:
-        # Cleanup
         active_jobs.pop(job_id, None)
+
+def processing_worker(job_id, max_concurrent=50):
+    asyncio.run(async_worker(job_id, max_concurrent))
+
+
 
 
 # ─── Generate Output File ────────────────────────────────────────

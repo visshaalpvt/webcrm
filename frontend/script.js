@@ -32,6 +32,7 @@ const statProcessed = $('#statProcessed');
 const statActive = $('#statActive');
 const statInactive = $('#statInactive');
 const statNotFound = $('#statNotFound');
+const statSpeed = $('#statSpeed');
 const currentItem = $('#currentItem');
 const currentCollege = $('#currentCollege');
 const etaInfo = $('#etaInfo');
@@ -254,6 +255,7 @@ function updateProgress(data) {
     statActive.textContent = data.active;
     statInactive.textContent = data.inactive;
     statNotFound.textContent = data.not_found;
+    statSpeed.textContent = (data.rate || 0) + '/min';
 
     if (data.current) {
         currentItem.style.display = 'flex';
@@ -349,7 +351,12 @@ function renderResults(colleges) {
     resultsBody.innerHTML = colleges.map((c, i) => `
         <tr>
             <td>${i + 1}</td>
-            <td title="${esc(c.college_name)}">${esc(c.college_name)}</td>
+            <td title="Click to open website or search">
+                <a href="#" onclick="openCollegeWebsite('${esc(c.college_name)}', '${esc(c.found_website || c.original_website)}'); return false;" 
+                   style="color: var(--accent-primary); text-decoration: underline; font-weight: 500;">
+                    ${esc(c.college_name)}
+                </a>
+            </td>
             <td>${esc(c.state)}</td>
             <td>${esc(c.district)}</td>
             <td>${c.found_website || c.original_website ?
@@ -433,9 +440,19 @@ function formatTime(seconds) {
 }
 
 function formatUrl(url) {
-    if (!url) return '#';
+    if (!url || url === 'Not Found') return '#';
     if (!/^https?:\/\//i.test(url)) return 'http://' + url;
     return url;
+}
+
+function openCollegeWebsite(name, url) {
+    if (url && url !== 'Not Found') {
+        const fullUrl = formatUrl(url);
+        window.open(fullUrl, '_blank');
+    } else {
+        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(name + ' official website')}`;
+        window.open(searchUrl, '_blank');
+    }
 }
 
 function showAlert(message) {
