@@ -33,6 +33,11 @@ const statActive = $('#statActive');
 const statInactive = $('#statInactive');
 const statNotFound = $('#statNotFound');
 const statSpeed = $('#statSpeed');
+const connectionHealth = $('#connectionHealth');
+const connStatusLed = $('#connStatusLed');
+const connStatusText = $('#connStatusText');
+const statOpenCircuits = $('#statOpenCircuits');
+const statRetryCount = $('#statRetryCount');
 const currentItem = $('#currentItem');
 const currentCollege = $('#currentCollege');
 const etaInfo = $('#etaInfo');
@@ -209,6 +214,16 @@ function connectSSE(jobId) {
     addLogLine('INFO', 'Connecting to server...');
 
     eventSource = new EventSource(`${API_BASE}/events/${jobId}`);
+    
+    // Auto-reconnect logic
+    let reconnectTimeout;
+    
+    eventSource.onopen = () => {
+        clearTimeout(reconnectTimeout);
+        connStatusText.textContent = "Connection Healthy";
+        connStatusLed.style.background = "#22c55e";
+        connStatusLed.style.boxShadow = "0 0 5px #22c55e";
+    };
 
     eventSource.onmessage = (e) => {
         try {
@@ -220,7 +235,12 @@ function connectSSE(jobId) {
     };
 
     eventSource.onerror = () => {
-        addLogLine('WARNING', 'Connection interrupted. Attempting to reconnect...');
+        connStatusText.textContent = "Reconnecting...";
+        connStatusLed.style.background = "#eab308";
+        connStatusLed.style.boxShadow = "0 0 5px #eab308";
+        
+        // Don't close, EventSource auto-reconnects by default. 
+        // We just log it if it persists.
     };
 }
 
@@ -256,6 +276,20 @@ function updateProgress(data) {
     statInactive.textContent = data.inactive;
     statNotFound.textContent = data.not_found;
     statSpeed.textContent = (data.rate || 0) + '/min';
+    
+    if (data.connection_stats) {
+        connectionHealth.style.display = 'block';
+        statOpenCircuits.textContent = data.connection_stats.open_circuits || 0;
+        statRetryCount.textContent = data.connection_stats.failed_domains || 0;
+        
+        if (data.connection_stats.open_circuits > 5) {
+            connStatusText.textContent = "Degraded Performance";
+            connStatusLed.style.background = "#ef4444";
+        } else if (data.connection_stats.open_circuits > 0) {
+            connStatusText.textContent = "Circuits Tripped";
+            connStatusLed.style.background = "#eab308";
+        }
+    }
 
     if (data.current) {
         currentItem.style.display = 'flex';

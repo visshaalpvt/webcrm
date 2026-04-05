@@ -225,11 +225,18 @@ async def async_worker(job_id, max_concurrent=50):
                         log_msg = f"[{processed}/{total}] {college_name[:40]}... → {status} | Phone: {phone} | Email: {email}"
                         await asyncio.to_thread(add_log, job_id, 'INFO', log_msg)
                         
+                        from scraper import domain_failures, domain_cooldown
+                        open_circuits = len([t for t in domain_cooldown.values() if t > time.time()])
+                        
                         emit_event(job_id, 'progress', {
                             'processed': processed, 'total': total, 'active': active,
                             'inactive': inactive, 'not_found': not_found, 'current': college_name,
                             'status': status, 'phone': phone, 'email': email, 'principal': principal,
                             'eta_seconds': int(eta), 'rate': round(rate * 60, 1),
+                            'connection_stats': {
+                                'failed_domains': len(domain_failures),
+                                'open_circuits': open_circuits
+                            }
                         })
                         emit_event(job_id, 'log', {'level': 'INFO', 'message': log_msg})
 
@@ -442,10 +449,10 @@ def sse_events(job_id):
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
                     break
 
-            # Send a keep-alive ping so Vercel doesn't kill the connection
-            yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+            # Send a keep-alive ping more frequently to prevent Vercel/Render timeouts
+            yield f"data: {json.dumps({'type': 'ping', 'timestamp': time.time()})}\n\n"
 
-            time.sleep(1.0)
+            time.sleep(0.5)
 
     return Response(
         generate(),

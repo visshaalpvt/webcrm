@@ -88,6 +88,20 @@
                 <div class="progress-bar-fill" id="progressBar"></div>
             </div>
         </div>
+        
+        <!-- Connection Health Panel -->
+        <div class="connection-health-panel" id="connectionHealth" style="display:none; margin-bottom: 1rem; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg);">
+            <div style="display:flex; justify-content: space-between; align-items: center;">
+                <div style="display:flex; align-items: center; gap: 0.5rem;">
+                    <div id="connStatusLed" class="status-led led-green" style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 5px #22c55e;"></div>
+                    <span id="connStatusText" style="font-size: 0.85rem; font-weight: 500;">Connection Healthy</span>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                    Circuits: <span id="statOpenCircuits" style="color: var(--text-main)">0</span> | 
+                    Retrying: <span id="statRetryCount" style="color: var(--text-main)">0</span>
+                </div>
+            </div>
+        </div>
 
         <div class="progress-stats">
             <div class="stat-card">
